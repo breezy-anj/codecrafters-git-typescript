@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as crypto from "crypto";
 import * as zlib from "zlib";
 import * as path from "path";
 const args = process.argv.slice(2);
@@ -13,7 +14,7 @@ switch (command) {
     console.log("Initialized git directory");
     break;
 
-  case "cat-file":
+  case "cat-file": {
     const dir = args[2].substring(0, 2);
     const fileName = args[2].substring(2);
     const targetPath = path.join(".git", "objects", dir, fileName);
@@ -23,6 +24,17 @@ switch (command) {
     const fileContentBuffer = uncompressedContent.subarray(nullByteIndex + 1);
     process.stdout.write(fileContentBuffer);
     break;
+  }
+  case "hash-object": {
+    const filePath = process.argv.at(-1);
+    const fileContent = fs.readFileSync(filePath);
+    const length = fileContent.length;
+    const headerString = `blob ${length} \0`;
+    const buffer = Buffer.from(headerString);
+    Buffer.concat([buffer, fileContent]);
+    process.stdout.write(buffer);
+    break;
+  }
   default:
     throw new Error(`Unknown command ${command}`);
 }
