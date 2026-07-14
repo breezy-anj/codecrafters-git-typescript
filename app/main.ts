@@ -29,10 +29,11 @@ switch (command) {
     const filePath = process.argv.at(-1);
     const fileContent = fs.readFileSync(filePath);
     const length = fileContent.length;
-    const headerString = `blob ${length} \0`;
+    const headerString = `blob ${length}\0`;
     const buffer = Buffer.from(headerString);
-    Buffer.concat([buffer, fileContent]);
-    process.stdout.write(buffer);
+    const payload = Buffer.concat([buffer, fileContent]);
+    const hash = crypto.createHash("sha1").update(payload).digest("hex"); //NEW
+    process.stdout.write(hash);
     break;
   }
   default:
