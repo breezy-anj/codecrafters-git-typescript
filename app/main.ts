@@ -33,7 +33,15 @@ switch (command) {
     const buffer = Buffer.from(headerString);
     const payload = Buffer.concat([buffer, fileContent]);
     const hash = crypto.createHash("sha1").update(payload).digest("hex"); //NEW
-    process.stdout.write(hash);
+    if (process.argv.includes("-w")) {
+      const dir = hash.substring(0, 2);
+      const fileName = hash.substring(2);
+      const targetPath = path.join(".git", "objects", dir);
+      fs.mkdirSync(targetPath, { recursive: true });
+      const compressed = zlib.deflateSync(payload);
+      fs.writeFileSync(path.join(targetPath, fileName), compressed);
+    }
+    process.stdout.write(hash + "\n");
     break;
   }
   default:
