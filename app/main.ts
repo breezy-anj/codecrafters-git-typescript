@@ -95,6 +95,11 @@ switch (command) {
     process.stdout.write(writeBlobObject(filePath) + "\n");
     break;
   }
+  case "write-tree": {
+    const hash = writeTreeObject(process.cwd());
+    process.stdout.write(hash + "\n");
+    break;
+  }
 
   case "ls-tree": {
     const hash = process.argv.at(-1);
