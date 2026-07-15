@@ -273,24 +273,30 @@ ${message}
 
         cursor += compressedLength;
 
-        const header = Buffer.from(`${objectType} ${size}\0`);
-        const fullPayload = Buffer.concat([header, uncompressedData]);
-        const hash = crypto
-          .createHash("sha1")
-          .update(fullPayload)
-          .digest("hex");
+        if (objectType !== "delta") {
+          const header = Buffer.from(`${objectType} ${size}\0`);
+          const fullPayload = Buffer.concat([header, uncompressedData]);
+          const hash = crypto
+            .createHash("sha1")
+            .update(fullPayload)
+            .digest("hex");
 
-        const dir = hash.substring(0, 2);
-        const fileName = hash.substring(2);
+          const dir = hash.substring(0, 2);
+          const fileName = hash.substring(2);
 
-        const targetPath = path.join(targetDir, ".git", "objects", dir);
-        fs.mkdirSync(targetPath, { recursive: true });
-        fs.writeFileSync(
-          path.join(targetPath, fileName),
-          zlib.deflateSync(fullPayload),
-        );
-
-        console.log(`Unpacked ${objectType} -> ${hash}`);
+          const targetPath = path.join(targetDir, ".git", "objects", dir);
+          fs.mkdirSync(targetPath, { recursive: true });
+          fs.writeFileSync(
+            path.join(targetPath, fileName),
+            zlib.deflateSync(fullPayload),
+          );
+          console.log(`Unpacked ${objectType} -> ${hash}`);
+        } else {
+          console.log(
+            `Delta payload uncompressed length: ${uncompressedData.length} bytes`,
+          );
+          break;
+        }
       }
     });
 
