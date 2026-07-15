@@ -226,12 +226,18 @@ ${message}
 
       let cursor = 20;
 
-      for (let i = 0; i < 1; i++) {
+      const typeMap: Record<number, string> = {
+        1: "commit",
+        2: "tree",
+        3: "blob",
+        4: "tag",
+      };
+
+      for (let i = 0; i < objectCount; i++) {
         let byte = buffer[cursor];
         cursor++;
 
-        const type = (byte & 0b01110000) >> 4;
-
+        const typeInt = (byte & 0b01110000) >> 4;
         let size = byte & 0b00001111;
         let shift = 4;
 
@@ -242,77 +248,49 @@ ${message}
           shift += 7;
         }
 
-        console.log(`\n--- Object ${i + 1} ---`);
-        console.log(`Type: ${type}`);
-        console.log(`Uncompressed Size: ${size} bytes`);
-        console.log(`Cursor is now sitting at byte: ${cursor}`);
+        const objectType = typeMap[typeInt];
 
-        const typeMap: Record<number, string> = {
-          1: "commit",
-          2: "tree",
-          3: "blob",
-          4: "tag",
-        };
+        if (!objectType) {
+          console.log(
+            `\nFatal: Encountered Delta Object (Type ${typeInt}) at Object ${i + 1}.`,
+          );
+          break;
+        }
 
-        for (let i = 0; i < objectCount; i++) {
-          let byte = buffer[cursor];
-          cursor++;
+        let compressedLength = 1;
+        let uncompressedData: Buffer;
 
-          const typeInt = (byte & 0b01110000) >> 4;
-          let size = byte & 0b00001111;
-          let shift = 4;
-
-          while (byte & 0b10000000) {
-            byte = buffer[cursor];
-            cursor++;
-            size |= (byte & 0b01111111) << shift;
-            shift += 7;
-          }
-
-          const objectType = typeMap[typeInt];
-
-          if (!objectType) {
-            console.log(
-              `\nFatal: Encountered Delta Object (Type ${typeInt}) at Object ${i + 1}.`,
+        while (true) {
+          try {
+            uncompressedData = zlib.inflateSync(
+              buffer.subarray(cursor, cursor + compressedLength),
             );
             break;
+          } catch (error: any) {
+            compressedLength++;
           }
-
-          let compressedLength = 1;
-          let uncompressedData: Buffer;
-
-          while (true) {
-            try {
-              uncompressedData = zlib.inflateSync(
-                buffer.subarray(cursor, cursor + compressedLength),
-              );
-              break;
-            } catch (error: any) {
-              compressedLength++;
-            }
-          }
-
-          cursor += compressedLength;
-
-          const header = Buffer.from(`${objectType} ${size}\0`);
-          const fullPayload = Buffer.concat([header, uncompressedData]);
-          const hash = crypto
-            .createHash("sha1")
-            .update(fullPayload)
-            .digest("hex");
-
-          const dir = hash.substring(0, 2);
-          const fileName = hash.substring(2);
-
-          const targetPath = path.join(targetDir, ".git", "objects", dir);
-          fs.mkdirSync(targetPath, { recursive: true });
-          fs.writeFileSync(
-            path.join(targetPath, fileName),
-            zlib.deflateSync(fullPayload),
-          );
-
-          console.log(`Unpacked ${objectType} -> ${hash}`);
         }
+
+        cursor += compressedLength;
+
+        const header = Buffer.from(`${objectType} ${size}\0`);
+        const fullPayload = Buffer.concat([header, uncompressedData]);
+        const hash = crypto
+          .createHash("sha1")
+          .update(fullPayload)
+          .digest("hex");
+
+        const dir = hash.substring(0, 2);
+        const fileName = hash.substring(2);
+
+        const targetPath = path.join(targetDir, ".git", "objects", dir);
+        fs.mkdirSync(targetPath, { recursive: true });
+        fs.writeFileSync(
+          path.join(targetPath, fileName),
+          zlib.deflateSync(fullPayload),
+        );
+
+        console.log(`Unpacked ${objectType} -> ${hash}`);
       }
     });
 
