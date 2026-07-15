@@ -5,6 +5,23 @@ import * as path from "path";
 const args = process.argv.slice(2);
 const command = args[0];
 
+async function fetchResponse(url: string) {
+  try {
+    const response = await fetch(`${url}/info/refs?service=git-upload-pack`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data = await response.text();
+    console.log("--RAW GIT RESPONSE--");
+
+    console.log("Success:", data.toString());
+    return data.toString();
+  } catch (error) {
+    console.error("Error: " + error);
+  }
+}
 function writeBlobObject(filePath: string): string {
   const fileContent = fs.readFileSync(filePath);
   const length = fileContent.length;
@@ -162,6 +179,143 @@ ${message}
     fs.writeFileSync(path.join(targetPath, fileName), compressed);
 
     process.stdout.write(hash);
+    break;
+  }
+
+  case "clone": {
+    const targetDir = process.argv.at(-1) as string;
+    const url = process.argv.at(-2) as string;
+
+    fs.mkdirSync(path.join(targetDir, ".git"), { recursive: true });
+    fs.mkdirSync(path.join(targetDir, ".git/objects"), { recursive: true });
+    fs.mkdirSync(path.join(targetDir, ".git/refs"), { recursive: true });
+    fs.writeFileSync(
+      path.join(targetDir, ".git/HEAD"),
+      "ref: refs/heads/main\n",
+    );
+    console.log("Initialized git directory");
+
+    fetchResponse(url).then(async (data) => {
+      const match = data.match(/([a-f0-9]{40}) HEAD/);
+      if (!match) {
+        throw new Error("Could not find commit hash in server response.");
+      }
+      const hash = match[1];
+      const requestBody = `0032want ${hash}\n00000009done\n`;
+      const packfileResponse = await fetch(`${url}/git-upload-pack`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-git-upload-pack-request",
+        },
+        body: requestBody,
+      });
+
+      const buffer = Buffer.from(await packfileResponse.arrayBuffer());
+      console.log(`Received Packfile of length: ${buffer.length} bytes`);
+
+      const nak = buffer.subarray(0, 8).toString("utf-8");
+      console.log(`Server Ack: ${nak.trim()}`);
+
+      const signature = buffer.subarray(8, 12).toString("utf-8");
+      const version = buffer.readUInt32BE(12);
+      const objectCount = buffer.readUInt32BE(16);
+
+      console.log(`Signature: ${signature}`);
+      console.log(`Version: ${version}`);
+      console.log(`Object Count: ${objectCount}`);
+
+      let cursor = 20;
+
+      for (let i = 0; i < 1; i++) {
+        let byte = buffer[cursor];
+        cursor++;
+
+        const type = (byte & 0b01110000) >> 4;
+
+        let size = byte & 0b00001111;
+        let shift = 4;
+
+        while (byte & 0b10000000) {
+          byte = buffer[cursor];
+          cursor++;
+          size |= (byte & 0b01111111) << shift;
+          shift += 7;
+        }
+
+        console.log(`\n--- Object ${i + 1} ---`);
+        console.log(`Type: ${type}`);
+        console.log(`Uncompressed Size: ${size} bytes`);
+        console.log(`Cursor is now sitting at byte: ${cursor}`);
+
+        const typeMap: Record<number, string> = {
+          1: "commit",
+          2: "tree",
+          3: "blob",
+          4: "tag",
+        };
+
+        for (let i = 0; i < objectCount; i++) {
+          let byte = buffer[cursor];
+          cursor++;
+
+          const typeInt = (byte & 0b01110000) >> 4;
+          let size = byte & 0b00001111;
+          let shift = 4;
+
+          while (byte & 0b10000000) {
+            byte = buffer[cursor];
+            cursor++;
+            size |= (byte & 0b01111111) << shift;
+            shift += 7;
+          }
+
+          const objectType = typeMap[typeInt];
+
+          if (!objectType) {
+            console.log(
+              `\nFatal: Encountered Delta Object (Type ${typeInt}) at Object ${i + 1}.`,
+            );
+            break;
+          }
+
+          let compressedLength = 1;
+          let uncompressedData: Buffer;
+
+          while (true) {
+            try {
+              uncompressedData = zlib.inflateSync(
+                buffer.subarray(cursor, cursor + compressedLength),
+              );
+              break;
+            } catch (error: any) {
+              compressedLength++;
+            }
+          }
+
+          cursor += compressedLength;
+
+          const header = Buffer.from(`${objectType} ${size}\0`);
+          const fullPayload = Buffer.concat([header, uncompressedData]);
+          const hash = crypto
+            .createHash("sha1")
+            .update(fullPayload)
+            .digest("hex");
+
+          const dir = hash.substring(0, 2);
+          const fileName = hash.substring(2);
+
+          const targetPath = path.join(targetDir, ".git", "objects", dir);
+          fs.mkdirSync(targetPath, { recursive: true });
+          fs.writeFileSync(
+            path.join(targetPath, fileName),
+            zlib.deflateSync(fullPayload),
+          );
+
+          console.log(`Unpacked ${objectType} -> ${hash}`);
+        }
+      }
+    });
+
     break;
   }
   default:
