@@ -128,6 +128,41 @@ switch (command) {
     names.forEach((name) => process.stdout.write(name + "\n"));
     break;
   }
+
+  case "commit-tree": {
+    const cmd = process.argv;
+    const treeSha = cmd.at(2);
+    const parentSha = cmd.at(cmd.indexOf("-p"));
+    const message = cmd.at(cmd.indexOf("-m"));
+
+    if (!treeSha || !parentSha) {
+      throw new Error(`Unknown command`);
+      break;
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const commitContent = `tree ${treeSha} 
+parent ${parentSha} author John Doe <john@example.com> ${timestamp} +0000
+committer John Doe <john@example.com> ${timestamp} +0000
+
+${message}
+`;
+
+    const buffer: Buffer = Buffer.from(commitContent);
+    const headerBuffer = Buffer.from("commit " + commitContent.length + "\0");
+    const payload = Buffer.concat([buffer, headerBuffer]);
+    const hash = crypto.createHash("sha1").update(payload).digest("hex");
+
+    const dir = hash.substring(0, 2);
+    const fileName = hash.substring(2);
+    const targetPath = path.join(".git", "objects", dir);
+    fs.mkdirSync(targetPath, { recursive: true });
+    const compressed = zlib.deflateSync(payload);
+    fs.writeFileSync(path.join(targetPath, fileName), compressed);
+
+    process.stdout.write(hash);
+    break;
+  }
   default:
     throw new Error(`Unknown command ${command}`);
 }
