@@ -131,9 +131,9 @@ switch (command) {
 
   case "commit-tree": {
     const cmd = process.argv;
-    const treeSha = cmd.at(2);
-    const parentSha = cmd.at(cmd.indexOf("-p"));
-    const message = cmd.at(cmd.indexOf("-m"));
+    const treeSha = cmd.at(3);
+    const parentSha = cmd.at(cmd.indexOf("-p") + 1);
+    const message = cmd.at(cmd.indexOf("-m") + 1);
 
     if (!treeSha || !parentSha) {
       throw new Error(`Unknown command`);
@@ -141,8 +141,9 @@ switch (command) {
     }
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const commitContent = `tree ${treeSha} 
-parent ${parentSha} author John Doe <john@example.com> ${timestamp} +0000
+    const commitContent = `tree ${treeSha}
+parent ${parentSha}
+author John Doe <john@example.com> ${timestamp} +0000
 committer John Doe <john@example.com> ${timestamp} +0000
 
 ${message}
@@ -150,7 +151,7 @@ ${message}
 
     const buffer: Buffer = Buffer.from(commitContent);
     const headerBuffer = Buffer.from("commit " + commitContent.length + "\0");
-    const payload = Buffer.concat([buffer, headerBuffer]);
+    const payload = Buffer.concat([headerBuffer, buffer]);
     const hash = crypto.createHash("sha1").update(payload).digest("hex");
 
     const dir = hash.substring(0, 2);
